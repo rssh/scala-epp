@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<schema targetNamespace="http://hostmaster.ua/epp/uaepp-1.1"
+       xmlns:uaepp="http://hostmaster.ua/epp/uaepp-1.1"
+       xmlns="http://www.w3.org/2001/XMLSchema"
+       elementFormDefault="qualified">
+
+ <annotation>
+   <documentation>
+     UAEPP Extensions for Extensible Provisioning Protocol v1.1
+   </documentation>
+ </annotation>
+
+<!--
+Child elements found in EPP command <host:delete>.
+-->
+ <element name="delete" type="uaepp:deleteNSType"/>
+
+<!--
+Child elements of the <host:delete> command for the force host delete.
+-->
+ <complexType name="deleteNSType">
+   <sequence>
+     <element name="deleteNS" type="uaepp:confirmDeleteType"/>
+   </sequence>
+ </complexType>
+
+ <complexType name="confirmDeleteType">
+   <attribute name="confirm" type="uaepp:confirmType" use="required"/>
+ </complexType>
+
+ <simpleType name="confirmType">
+   <restriction base="token">
+     <enumeration value="yes"/>
+   </restriction>
+ </simpleType>
+
+<!--
+Child elements found in EPP command:
+  <domain:create>
+  <domain:update>
+-->
+
+ <element name="create" type="uaepp:licenseType"/>
+ <element name="update" type="uaepp:licenseType"/>
+
+ <complexType name="licenseType">
+   <sequence>
+     <element name="license" type="uaepp:license"/>
+   </sequence>
+ </complexType>
+
+ <simpleType name="license">
+   <restriction base="token">
+     <maxLength value="50"/>
+   </restriction>
+ </simpleType>
+
+<!--
+End of schema.
+-->
+</schema>

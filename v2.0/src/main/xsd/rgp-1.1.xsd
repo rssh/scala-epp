@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<schema targetNamespace="http://hostmaster.ua/epp/rgp-1.1"
+        xmlns:rgp="http://hostmaster.ua/epp/rgp-1.1"
+        xmlns="http://www.w3.org/2001/XMLSchema"
+        elementFormDefault="qualified">
+
+  <annotation>
+    <documentation>
+      Extensible Provisioning Protocol v1.0
+      domain name extension schema for registry grace period
+      processing.
+    </documentation>
+  </annotation>
+
+<!--
+Child elements found in EPP commands.
+-->
+  <element name="update" type="rgp:updateType"/>
+
+<!--
+Child elements of the <update> command for the
+redemption grace period.
+-->
+  <complexType name="updateType">
+    <sequence>
+      <element name="restore" type="rgp:restoreType"/>
+    </sequence>
+  </complexType>
+
+  <complexType name="restoreType">
+    <attribute name="op" type="rgp:rgpOpType" use="required"/>
+  </complexType>
+
+<!--
+New redemption grace period operations can be defined
+by adding to this enumeration.
+-->
+  <simpleType name="rgpOpType">
+    <restriction base="token">
+      <enumeration value="request"/>
+    </restriction>
+  </simpleType>
+
+<!--
+End of schema.
+-->
+</schema>

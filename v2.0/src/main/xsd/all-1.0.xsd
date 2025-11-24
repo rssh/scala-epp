@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+  <!--
+  This schema does not define anything, it just imports other schemas
+  and makes the usage of EPP schemas more convenient.
+  -->
+  <schema targetNamespace="http://hostmaster.ua/epp/all-1.0"
+          xmlns:all="http://hostmaster.ua/epp/all-1.0"
+          xmlns="http://www.w3.org/2001/XMLSchema"
+          elementFormDefault="qualified">
+
+    <!--
+    Import all schemas related to EPP protocol.
+    Anytime the version of any imported schema is raised, the version of
+    'all' schema must be raised too.
+
+    eppcom and epp schemas never change the version. This would result
+    in incompatibility with EPP standard.
+    -->
+    <import namespace="http://hostmaster.ua/epp/eppcom-1.1"
+      schemaLocation="eppcom-1.1.xsd"/>
+    <import namespace="urn:ietf:params:xml:ns:epp-1.0"
+      schemaLocation="epp-1.0.xsd"/>
+    <import namespace="http://hostmaster.ua/epp/contact-1.1"
+      schemaLocation="contact-1.1.xsd"/>
+    <import namespace="http://hostmaster.ua/epp/domain-1.1"
+      schemaLocation="domain-1.1.xsd"/>
+    <import namespace="http://hostmaster.ua/epp/host-1.1"
+      schemaLocation="host-1.1.xsd"/>
+    <import namespace="http://hostmaster.ua/epp/rgp-1.1"
+      schemaLocation="rgp-1.1.xsd"/>
+    <import namespace="http://hostmaster.ua/epp/uaepp-1.1.xsd"
+      schemaLocation="uaepp-1.1.xsd"/>
+
+    <annotation>
+      <documentation>
+        Extensible Provisioning Protocol v1.0
+        all schema's grouped together
+      </documentation>
+    </annotation>
+
+  </schema>
