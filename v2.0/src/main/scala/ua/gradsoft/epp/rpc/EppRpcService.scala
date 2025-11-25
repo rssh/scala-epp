@@ -6,8 +6,8 @@ import ua.gradsoft.epp.xsdmodel._
 trait EppRpcService {
 
   // Session management
-  def hello(): Future[GreetingType] // Added hello command
-  def login(loginType: LoginType): Future[GreetingType]
+  def hello(): Future[GreetingType]
+  def login(loginType: LoginType): Future[ResponseType]
   def logout(): Future[ResponseType] // Logout typically doesn't take a specific type, just logs out
 
   // Domain operations

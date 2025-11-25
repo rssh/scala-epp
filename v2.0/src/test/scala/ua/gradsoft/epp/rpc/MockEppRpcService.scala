@@ -69,16 +69,32 @@ class MockEppRpcService(implicit val executionContext: ExecutionContext) extends
   }
 
   /**
-   * Handles login command and returns a greeting response.
-   * According to EPP spec, login returns a greeting-like response.
+   * Handles login command and returns a response.
    */
-  override def login(loginType: LoginType): Future[GreetingType] = {
+  override def login(loginType: LoginType): Future[ResponseType] = {
     Future.successful(
-      GreetingType(
-        svID = "EPP Mock Server - Authenticated",
-        svDate = createXMLGregorianCalendar(),
-        svcMenu = createSvcMenuType(),
-        dcp = createDcpType()
+      ResponseType(
+        result = Seq(
+          ResultType(
+            msg = MsgType(
+              value = "Command completed successfully",
+              attributes = Map(
+                "@lang" -> scalaxb.DataRecord[String]("en")
+              )
+            ),
+            resulttypeoption = Seq.empty,
+            attributes = Map(
+              "@code" -> scalaxb.DataRecord[ResultCodeType](Number1000)
+            )
+          )
+        ),
+        msgQ = None,
+        resData = None,
+        extension = None,
+        trID = TrIDType(
+          clTRID = Some("USER-" + System.currentTimeMillis()),
+          svTRID = "MOCK-" + System.currentTimeMillis()
+        )
       )
     )
   }

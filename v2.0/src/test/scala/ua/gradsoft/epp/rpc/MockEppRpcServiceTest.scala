@@ -23,7 +23,7 @@ class MockEppRpcServiceTest extends AnyFunSuite {
     assert(greeting.svcMenu.objURI.exists(_.toString.contains("host")))
   }
 
-  test("login() returns a valid GreetingType") {
+  test("login() returns a valid ResponseType with code 1000") {
     val mockService = new MockEppRpcService()
 
     // Create a minimal LoginType
@@ -41,11 +41,12 @@ class MockEppRpcServiceTest extends AnyFunSuite {
       )
     )
 
-    val greetingFuture = mockService.login(loginType)
-    val greeting = Await.result(greetingFuture, 5.seconds)
+    val responseFuture = mockService.login(loginType)
+    val response = Await.result(responseFuture, 5.seconds)
 
-    assert(greeting.svID == "EPP Mock Server - Authenticated")
-    assert(greeting.svcMenu.version.contains(Number1u460))
+    assert(response.result.nonEmpty)
+    assert(response.result.head.code == Number1000)
+    assert(response.trID.svTRID.startsWith("MOCK-"))
   }
 
   test("logout() returns a valid ResponseType with code 1500") {
