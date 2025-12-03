@@ -1,6 +1,6 @@
 package ua.gradsoft.epp
 
-import ua.gradsoft.epp.model.{DomainInfo, ContactInfo, HostInfo, EppPeriod}
+import ua.gradsoft.epp.model.{DomainInfo, ContactInfo, ContactTransferResult, HostInfo, EppPeriod}
 import scala.concurrent.Future
 
 // Placeholder for credentials
@@ -25,7 +25,7 @@ trait EppConnection {
   def infoContact(contactId: String, authInfo: Option[String] = None): Future[Option[ContactInfo]]
   def updateContact(contact: ContactInfo): Future[ContactInfo]
   def deleteContact(contactId: String, authInfo: Option[String] = None): Future[Unit]
-  def transferContact(contactId: String, authInfo: Option[String] = None): Future[ContactInfo] // Simplified for now
+  def transferContact(contactId: String, authInfo: Option[String] = None): Future[ContactTransferResult]
 
   // Host operations
   def checkHost(hostName: String): Future[Boolean]

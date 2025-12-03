@@ -274,7 +274,7 @@ class EppConnectionImpl(
     rpcService.contactDelete(deleteType).map(_ => ())
   }
 
-  override def transferContact(contactId: String, authInfo: Option[String]): Future[ContactInfo] = {
+  override def transferContact(contactId: String, authInfo: Option[String]): Future[ContactTransferResult] = {
     val authInfoType = authInfo.map { pw =>
       AuthInfoType(
         authinfotypeoption = scalaxb.DataRecord[PwAuthInfoTypeType](
@@ -290,19 +290,7 @@ class EppConnectionImpl(
       authInfo = authInfoType
     )
 
-    rpcService.contactTransfer(transferType).map { result =>
-      ContactInfo(
-        id = result.id,
-        roid = "",
-        email = "",
-        sponsoringClientID = result.acID,
-        creatingClientID = "",
-        lastUpdateClientID = None,
-        creationDate = ua.gradsoft.epp.util.EppXmlUtil.fromXMLGregorianCalendar(result.acDate),
-        lastUpdateDate = None,
-        lastTransferDate = Some(ua.gradsoft.epp.util.EppXmlUtil.fromXMLGregorianCalendar(result.acDate))
-      )
-    }
+    rpcService.contactTransfer(transferType).map(ContactTransferResult.fromTrnDataType)
   }
 
   // Host operations
