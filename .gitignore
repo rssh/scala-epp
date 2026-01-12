@@ -1,0 +1,12 @@
+# sbt build artifacts
+target/
+project/target/
+project/project/
+
+# IDE
+.idea/
+.bsp/
+*.iml
+
+# OS
+.DS_Store
