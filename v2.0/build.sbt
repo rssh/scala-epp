@@ -12,3 +12,4 @@ libraryDependencies ++= Seq(
   "com.softwaremill.sttp.client4" %% "core" % "4.0.0-M20",
   "org.scalatest" %% "scalatest" % "3.2.19" % "test"
 )
+Test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-l", "IntegrationTest")

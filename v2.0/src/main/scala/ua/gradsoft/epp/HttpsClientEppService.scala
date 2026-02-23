@@ -2,6 +2,7 @@ package ua.gradsoft.epp
 
 import scala.concurrent.{ExecutionContext, Future}
 import sttp.client4._
+import sttp.client4.httpclient.HttpClientFutureBackend
 import ua.gradsoft.epp.rpc.EppHttpsRpcServiceImpl
 import ua.gradsoft.epp.xsdmodel._
 
@@ -54,7 +55,14 @@ class HttpsClientEppService(
 object HttpsClientEppService {
 
   def apply(config: EppConfig)(implicit ec: ExecutionContext): HttpsClientEppService = {
-    val backend = DefaultFutureBackend()
+    val backend = config.clientCertificatePem match {
+      case Some(pemPath) =>
+        val sslContext = EppSslContext.fromPemFile(pemPath, config.serverCaPem)
+        val httpClient = java.net.http.HttpClient.newBuilder().sslContext(sslContext).build()
+        HttpClientFutureBackend.usingClient(httpClient)
+      case None =>
+        DefaultFutureBackend()
+    }
     new HttpsClientEppService(config, backend)
   }
 
