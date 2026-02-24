@@ -16,6 +16,18 @@ trait EppRpcServiceImpl extends EppRpcService {
   // Abstract method - must be implemented by concrete class
   def processEppMessage(input: EppType): Future[EppType]
 
+  /** Wrap a domain/contact/host-specific payload in the EPP-namespace operation element.
+   *
+   * EPP structure: <epp:check><domain:check>...</domain:check></epp:check>
+   * The outer element (e.g. "check") must be in the EPP namespace.
+   * The inner element carries the registry-specific namespace and type.
+   */
+  private def eppCmd[A: scalaxb.CanWriteXML](op: String, innerNs: Option[String], payload: A): CommandType = {
+    val inner = DataRecord(innerNs, Some(op), None, None, payload)
+    val outer = DataRecord(eppNs, Some(op), None, None, ExtAnyType(Seq(inner)))
+    CommandType(outer, None, None)
+  }
+
   // Session management
   override def hello(): Future[GreetingType] = {
     val helloRecord = DataRecord(eppNs, Some("hello"), "")
@@ -42,48 +54,57 @@ trait EppRpcServiceImpl extends EppRpcService {
     val eppRequest = EppType(commandRecord)
     processEppMessage(eppRequest).flatMap { response =>
       extractEppContent[ResponseType](response, "response")
+    }.flatMap { response =>
+      response.result.headOption match {
+        case Some(result) =>
+          result.code match {
+            case Number1000 | Number1001 | Number1300 | Number1301 | Number1500 =>
+              Future.successful(response)
+            case code =>
+              Future.failed(EppErrorException(result.msg.value, code))
+          }
+        case None =>
+          Future.successful(response)
+      }
     }
   }
 
   // Domain operations
   override def domainCheck(checkType: MNameTypeType): Future[ChkDataTypeType2] = {
-    val checkRecord = DataRecord(domainNs, Some("check"), None, None, checkType)
-    val command = CommandType(checkRecord, None, None)
+    val command = eppCmd("check", domainNs, checkType)
     executeCommand(command).flatMap { response =>
       extractResponseData[ChkDataTypeType2](response, domainNs, "chkData")
     }
   }
 
   override def domainCreate(createType: CreateTypeType2): Future[CreDataTypeType2] = {
-    val createRecord = DataRecord(domainNs, Some("create"), None, None, createType)
-    val command = CommandType(createRecord, None, None)
+    val command = eppCmd("create", domainNs, createType)
     executeCommand(command).flatMap { response =>
       extractResponseData[CreDataTypeType2](response, domainNs, "creData")
     }
   }
 
   override def domainInfo(infoType: InfoType): Future[InfDataTypeType2] = {
-    val infoRecord = DataRecord(domainNs, Some("info"), None, None, infoType)
-    val command = CommandType(infoRecord, None, None)
+    val command = eppCmd("info", domainNs, infoType)
     executeCommand(command).flatMap { response =>
       extractResponseData[InfDataTypeType2](response, domainNs, "infData")
     }
   }
 
   override def domainUpdate(updateType: UpdateTypeType2): Future[ResponseType] = {
-    val updateRecord = DataRecord(domainNs, Some("update"), None, None, updateType)
-    val command = CommandType(updateRecord, None, None)
+    val command = eppCmd("update", domainNs, updateType)
     executeCommand(command)
   }
 
   override def domainDelete(deleteType: SNameTypeType): Future[ResponseType] = {
-    val deleteRecord = DataRecord(domainNs, Some("delete"), None, None, deleteType)
-    val command = CommandType(deleteRecord, None, None)
+    val command = eppCmd("delete", domainNs, deleteType)
     executeCommand(command)
   }
 
   override def domainTransfer(transferType: TransferType): Future[TrnDataTypeType] = {
-    val transferRecord = DataRecord(domainNs, Some("transfer"), None, None, transferType)
+    // TransferType is the EPP-level <transfer op="..."> element (defined in epp-1.0.xsd),
+    // its `any` field already contains the domain-specific content.
+    val transferRecord = DataRecord(eppNs, Some("transfer"), None, None, transferType)
     val command = CommandType(transferRecord, None, None)
     executeCommand(command).flatMap { response =>
       extractResponseData[TrnDataTypeType](response, domainNs, "trnData")
@@ -91,8 +112,7 @@ trait EppRpcServiceImpl extends EppRpcService {
   }
 
   override def domainRenew(renewType: RenewType): Future[RenDataType] = {
-    val renewRecord = DataRecord(domainNs, Some("renew"), None, None, renewType)
-    val command = CommandType(renewRecord, None, None)
+    val command = eppCmd("renew", domainNs, renewType)
     executeCommand(command).flatMap { response =>
       extractResponseData[RenDataType](response, domainNs, "renData")
     }
@@ -100,44 +120,38 @@ trait EppRpcServiceImpl extends EppRpcService {
 
   // Contact operations
   override def contactCheck(checkType: MIDType): Future[ChkDataTypeType] = {
-    val checkRecord = DataRecord(contactNs, Some("check"), None, None, checkType)
-    val command = CommandType(checkRecord, None, None)
+    val command = eppCmd("check", contactNs, checkType)
     executeCommand(command).flatMap { response =>
       extractResponseData[ChkDataTypeType](response, contactNs, "chkData")
     }
   }
 
   override def contactCreate(createType: CreateTypeType): Future[CreDataTypeType] = {
-    val createRecord = DataRecord(contactNs, Some("create"), None, None, createType)
-    val command = CommandType(createRecord, None, None)
+    val command = eppCmd("create", contactNs, createType)
     executeCommand(command).flatMap { response =>
       extractResponseData[CreDataTypeType](response, contactNs, "creData")
     }
   }
 
   override def contactInfo(infoType: AuthIDType): Future[InfDataTypeType] = {
-    val infoRecord = DataRecord(contactNs, Some("info"), None, None, infoType)
-    val command = CommandType(infoRecord, None, None)
+    val command = eppCmd("info", contactNs, infoType)
     executeCommand(command).flatMap { response =>
       extractResponseData[InfDataTypeType](response, contactNs, "infData")
     }
   }
 
   override def contactUpdate(updateType: UpdateTypeType): Future[ResponseType] = {
-    val updateRecord = DataRecord(contactNs, Some("update"), None, None, updateType)
-    val command = CommandType(updateRecord, None, None)
+    val command = eppCmd("update", contactNs, updateType)
     executeCommand(command)
   }
 
   override def contactDelete(deleteType: SIDType): Future[ResponseType] = {
-    val deleteRecord = DataRecord(contactNs, Some("delete"), None, None, deleteType)
-    val command = CommandType(deleteRecord, None, None)
+    val command = eppCmd("delete", contactNs, deleteType)
     executeCommand(command)
   }
 
   override def contactTransfer(transferType: AuthIDType): Future[TrnDataType] = {
-    val transferRecord = DataRecord(contactNs, Some("transfer"), None, None, transferType)
-    val command = CommandType(transferRecord, None, None)
+    val command = eppCmd("transfer", contactNs, transferType)
     executeCommand(command).flatMap { response =>
       extractResponseData[TrnDataType](response, contactNs, "trnData")
     }
@@ -145,38 +159,33 @@ trait EppRpcServiceImpl extends EppRpcService {
 
   // Host operations
   override def hostCheck(checkType: MNameType): Future[ChkDataType] = {
-    val checkRecord = DataRecord(hostNs, Some("check"), None, None, checkType)
-    val command = CommandType(checkRecord, None, None)
+    val command = eppCmd("check", hostNs, checkType)
     executeCommand(command).flatMap { response =>
       extractResponseData[ChkDataType](response, hostNs, "chkData")
     }
   }
 
   override def hostCreate(createType: CreateType): Future[CreDataType] = {
-    val createRecord = DataRecord(hostNs, Some("create"), None, None, createType)
-    val command = CommandType(createRecord, None, None)
+    val command = eppCmd("create", hostNs, createType)
     executeCommand(command).flatMap { response =>
       extractResponseData[CreDataType](response, hostNs, "creData")
     }
   }
 
   override def hostInfo(infoType: SNameType): Future[InfDataType] = {
-    val infoRecord = DataRecord(hostNs, Some("info"), None, None, infoType)
-    val command = CommandType(infoRecord, None, None)
+    val command = eppCmd("info", hostNs, infoType)
     executeCommand(command).flatMap { response =>
       extractResponseData[InfDataType](response, hostNs, "infData")
     }
   }
 
   override def hostUpdate(updateType: UpdateType): Future[ResponseType] = {
-    val updateRecord = DataRecord(hostNs, Some("update"), None, None, updateType)
-    val command = CommandType(updateRecord, None, None)
+    val command = eppCmd("update", hostNs, updateType)
     executeCommand(command)
   }
 
   override def hostDelete(deleteType: SNameType): Future[ResponseType] = {
-    val deleteRecord = DataRecord(hostNs, Some("delete"), None, None, deleteType)
-    val command = CommandType(deleteRecord, None, None)
+    val command = eppCmd("delete", hostNs, deleteType)
     executeCommand(command)
   }
 

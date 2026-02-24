@@ -3,7 +3,7 @@ package ua.gradsoft.epp
 import scala.concurrent.{ExecutionContext, Future}
 import ua.gradsoft.epp.model._
 import ua.gradsoft.epp.rpc.EppRpcService
-import ua.gradsoft.epp.xsdmodel.{ContactType => XsdContactType, _}
+import ua.gradsoft.epp.xsdmodel.{ContactType => XsdContactType, PostalInfoType => XsdPostalInfoType, _}
 
 class EppConnectionImpl(
   rpcService: EppRpcService
@@ -219,18 +219,36 @@ class EppConnectionImpl(
       )
     )
 
+    def toXsdPostalInfo(pi: PostalInfo): XsdPostalInfoType =
+      val typeAttr: PostalInfoEnumType = pi.infoType match
+        case PostalInfoType.Local          => Loc
+        case PostalInfoType.International  => IntType
+      XsdPostalInfoType(
+        name = pi.name,
+        org  = pi.organization,
+        addr = AddrTypeType(
+          street = pi.address.street,
+          city   = pi.address.city,
+          sp     = pi.address.stateProvince,
+          pc     = pi.address.postalCode,
+          cc     = pi.address.countryCode
+        ),
+        attributes = Map("@type" -> scalaxb.DataRecord[PostalInfoEnumType](typeAttr))
+      )
+
     val createType = CreateTypeType(
-      id = contact.id,
-      postalInfo = Seq.empty,
-      voice = None,
-      fax = None,
-      email = contact.email,
-      authInfo = authInfoType,
-      disclose = None
+      id         = contact.id,
+      postalInfo = contact.postalInfo.map(toXsdPostalInfo),
+      voice      = contact.voice.map(p => E164Type(p.number, p.extension.map(x => Map("@x" -> scalaxb.DataRecord[String](x))).getOrElse(Map.empty))),
+      fax        = contact.fax.map(p => E164Type(p.number, p.extension.map(x => Map("@x" -> scalaxb.DataRecord[String](x))).getOrElse(Map.empty))),
+      email      = contact.email,
+      authInfo   = authInfoType,
+      disclose   = None
     )
 
     rpcService.contactCreate(createType).map { result =>
       contact.copy(
+        id = result.id,
         creationDate = ua.gradsoft.epp.util.EppXmlUtil.fromXMLGregorianCalendar(result.crDate)
       )
     }
