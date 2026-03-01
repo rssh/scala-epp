@@ -105,13 +105,59 @@ class EppConnectionImpl(
   }
 
   override def updateDomain(domain: DomainInfo): Future[DomainInfo] = {
-    val updateType = UpdateTypeType2(
-      name = domain.name,
-      add = None,
-      rem = None,
-      chg = None
-    )
-    rpcService.domainUpdate(updateType).map(_ => domain)
+    // Fetch current EPP state to compute diff
+    infoDomain(domain.name, domain.authInfo).flatMap {
+      case None =>
+        Future.failed(new IllegalStateException(s"Domain ${domain.name} not found in EPP registry"))
+      case Some(current) =>
+        val currentNs = current.nameservers.toSet
+        val desiredNs = domain.nameservers.toSet
+        val nsToAdd = desiredNs -- currentNs
+        val nsToRemove = currentNs -- desiredNs
+
+        val currentContacts = current.contacts.map(c => (c.contactType, c.id)).toSet
+        val desiredContacts = domain.contacts.map(c => (c.contactType, c.id)).toSet
+        val contactsToAdd = desiredContacts -- currentContacts
+        val contactsToRemove = currentContacts -- desiredContacts
+
+        def makeNsType(ns: Set[String]): Option[NsType] =
+          if ns.isEmpty then None
+          else Some(NsType(nstypeoption = ns.toSeq.map { n =>
+            scalaxb.DataRecord[String](Some("http://hostmaster.ua/epp/domain-1.1"), Some("hostObj"), n)
+          }))
+
+        def makeContacts(contacts: Set[(Option[ContactType], String)]): Seq[XsdContactType] =
+          contacts.toSeq.map { case (ct, id) =>
+            val attr = ct match {
+              case Some(ContactType.Admin)   => Admin
+              case Some(ContactType.Billing) => Billing
+              case _                         => Tech
+            }
+            XsdContactType(value = id, attributes = Map("@type" -> scalaxb.DataRecord[ContactAttrType](attr)))
+          }
+
+        def makeAddRem(ns: Set[String], contacts: Set[(Option[ContactType], String)]): Option[AddRemTypeType2] = {
+          val nsOpt = makeNsType(ns)
+          val contactSeq = makeContacts(contacts)
+          if nsOpt.isEmpty && contactSeq.isEmpty then None
+          else Some(AddRemTypeType2(ns = nsOpt, contact = contactSeq))
+        }
+
+        val registrantChanged = domain.registrant.isDefined && domain.registrant != current.registrant
+        val chg: Option[ChgTypeType] =
+          if registrantChanged then Some(ChgTypeType(registrant = domain.registrant))
+          else None
+
+        val add = makeAddRem(nsToAdd, contactsToAdd)
+        val rem = makeAddRem(nsToRemove, contactsToRemove)
+
+        if add.isEmpty && rem.isEmpty && chg.isEmpty then
+          // Nothing to change — skip the EPP call
+          Future.successful(domain)
+        else
+          val updateType = UpdateTypeType2(name = domain.name, add = add, rem = rem, chg = chg)
+          rpcService.domainUpdate(updateType).map(_ => domain)
+    }
   }
 
   override def deleteDomain(domainName: String, authInfo: Option[String]): Future[Unit] = {
@@ -278,13 +324,54 @@ class EppConnectionImpl(
   }
 
   override def updateContact(contact: ContactInfo): Future[ContactInfo] = {
-    val updateType = UpdateTypeType(
-      id = contact.id,
-      add = None,
-      rem = None,
-      chg = None
-    )
-    rpcService.contactUpdate(updateType).map(_ => contact)
+    // Fetch current EPP state to know which postal info types exist in the registry.
+    // The chg section can only modify existing postal info types — it cannot add new ones
+    // (contact add/rem only supports status changes, not postal info).
+    infoContact(contact.id, None).flatMap {
+      case None =>
+        Future.failed(new IllegalStateException(s"Contact ${contact.id} not found in EPP registry"))
+      case Some(current) =>
+        val existingTypes = current.postalInfo.map(_.infoType).toSet
+
+        def toChgPostalInfo(pi: PostalInfo): ChgPostalInfoType = {
+          val typeAttr: PostalInfoEnumType = pi.infoType match
+            case PostalInfoType.Local         => Loc
+            case PostalInfoType.International => IntType
+          ChgPostalInfoType(
+            name = Some(pi.name),
+            org  = pi.organization,
+            addr = Some(AddrTypeType(
+              street = pi.address.street,
+              city   = pi.address.city,
+              sp     = pi.address.stateProvince,
+              pc     = pi.address.postalCode,
+              cc     = pi.address.countryCode
+            )),
+            attributes = Map("@type" -> scalaxb.DataRecord[PostalInfoEnumType](typeAttr))
+          )
+        }
+
+        def toE164(p: PhoneNumber): E164Type =
+          E164Type(p.number, p.extension.map(x => Map("@x" -> scalaxb.DataRecord[String](x))).getOrElse(Map.empty))
+
+        // Only chg postal info types that already exist in the EPP registry
+        val postalInfoToChg = contact.postalInfo.filter(pi => existingTypes.contains(pi.infoType))
+
+        val chg = ChgType(
+          postalInfo = postalInfoToChg.map(toChgPostalInfo),
+          voice      = contact.voice.map(toE164),
+          fax        = contact.fax.map(toE164),
+          email      = Some(contact.email)
+        )
+
+        val updateType = UpdateTypeType(
+          id  = contact.id,
+          add = None,
+          rem = None,
+          chg = Some(chg)
+        )
+        rpcService.contactUpdate(updateType).map(_ => contact)
+    }
   }
 
   override def deleteContact(contactId: String, authInfo: Option[String]): Future[Unit] = {
