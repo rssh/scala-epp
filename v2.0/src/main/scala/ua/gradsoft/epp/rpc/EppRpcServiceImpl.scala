@@ -42,6 +42,25 @@ trait EppRpcServiceImpl extends EppRpcService {
     val eppRequest = EppType(commandRecord)
     processEppMessage(eppRequest).flatMap { response =>
       extractEppContent[ResponseType](response, "response")
+    }.map { response =>
+      validateResultCode(response)
+      response
+    }
+  }
+
+  private val successCodes: Set[ResultCodeType] = Set(
+    Number1000,
+    Number1001,
+    Number1300,
+    Number1500
+  )
+
+  private def validateResultCode(response: ResponseType): Unit = {
+    response.result.headOption.foreach { result =>
+      val code = result.code
+      if (!successCodes.contains(code)) {
+        throw EppErrorException(result.msg.value, code)
+      }
     }
   }
 
@@ -187,7 +206,11 @@ trait EppRpcServiceImpl extends EppRpcService {
     val record = eppResponse.epptypeoption
     if (record.key.contains(expectedKey)) {
       try {
-        Future.successful(record.as[T])
+        val value = record.value match {
+          case elem: scala.xml.Elem => scalaxb.fromXML[T](elem)
+          case other => other.asInstanceOf[T]
+        }
+        Future.successful(value)
       } catch {
         case e: Exception =>
           Future.failed(new IllegalArgumentException(s"Failed to extract $expectedKey from EPP response: ${e.getMessage}", e))
@@ -208,7 +231,11 @@ trait EppRpcServiceImpl extends EppRpcService {
         } match {
           case Some(record) =>
             try {
-              Future.successful(record.as[T])
+              val value = record.value match {
+                case elem: scala.xml.Elem => scalaxb.fromXML[T](elem)
+                case other => other.asInstanceOf[T]
+              }
+              Future.successful(value)
             } catch {
               case e: Exception =>
                 Future.failed(new IllegalArgumentException(s"Failed to extract $elementName from response: ${e.getMessage}", e))
