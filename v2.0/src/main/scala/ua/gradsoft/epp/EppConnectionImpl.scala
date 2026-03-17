@@ -99,8 +99,6 @@ class EppConnectionImpl(
 
     rpcService.domainInfo(infoType).map { result =>
       Some(DomainInfo.fromInfDataType(result))
-    }.recover {
-      case _: ua.gradsoft.epp.rpc.EppErrorException => None
     }
   }
 
