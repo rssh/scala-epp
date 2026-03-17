@@ -77,16 +77,22 @@ trait EppRpcServiceImpl extends EppRpcService {
     processEppMessage(eppRequest).flatMap { response =>
       extractEppContent[ResponseType](response, "response")
     }.flatMap { response =>
-      response.result.headOption match {
-        case Some(result) =>
-          result.code match {
-            case Number1000 | Number1001 | Number1300 | Number1301 | Number1500 =>
-              Future.successful(response)
-            case code =>
-              Future.failed(EppErrorException(result.msg.value, code))
+      val results = response.result
+      if (results.isEmpty) {
+        Future.failed(new RuntimeException("EPP response contained no <result> elements"))
+      } else {
+        val firstErrorOpt = results.find { r =>
+          r.code match {
+            case Number1000 | Number1001 | Number1300 | Number1301 | Number1500 => false
+            case _                                                               => true
           }
-        case None =>
-          Future.successful(response)
+        }
+        firstErrorOpt match {
+          case Some(errorResult) =>
+            Future.failed(EppErrorException(errorResult.msg.value, errorResult.code))
+          case None =>
+            Future.successful(response)
+        }
       }
     }
   }
