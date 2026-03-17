@@ -49,7 +49,7 @@ class EppTcpRpcServiceImpl(
   }
 
   private def writeFrame(xml: String): Unit = {
-    System.err.println(s"EPP >>> $xml")
+    System.err.println(s"EPP >>> sending ${xml.length} characters")
     val payload = xml.getBytes("UTF-8")
     val totalLength = 4 + payload.length
     output.writeInt(totalLength)
@@ -65,7 +65,7 @@ class EppTcpRpcServiceImpl(
     val payloadLength = totalLength - 4
     val payload = new Array[Byte](payloadLength)
     input.readFully(payload)
-    System.err.println(s"EPP <<< ${new String(payload, "UTF-8")}")
+    System.err.println(s"EPP <<< received " + payloadLength + " bytes")
     payload
   }
 
