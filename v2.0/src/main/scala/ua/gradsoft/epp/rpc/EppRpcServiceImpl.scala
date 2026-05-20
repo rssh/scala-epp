@@ -21,11 +21,33 @@ trait EppRpcServiceImpl extends EppRpcService {
    * EPP structure: <epp:check><domain:check>...</domain:check></epp:check>
    * The outer element (e.g. "check") must be in the EPP namespace.
    * The inner element carries the registry-specific namespace and type.
+   *
+   * For transfer commands, the outer <epp:transfer> element must carry the required
+   * EPP `op` attribute. Callers can provide this via `transferOp`; for all other
+   * commands this parameter should be left as `None`.
    */
-  private def eppCmd[A: scalaxb.CanWriteXML](op: String, innerNs: Option[String], payload: A): CommandType = {
+  private def eppCmd[A: scalaxb.CanWriteXML](
+    op: String,
+    innerNs: Option[String],
+    payload: A,
+    transferOp: Option[TransferOpType] = None
+  ): CommandType = {
     val inner = DataRecord(innerNs, Some(op), None, None, payload)
-    val outer = DataRecord(eppNs, Some(op), None, None, ExtAnyType(Seq(inner)))
-    CommandType(outer, None, None)
+
+    // For non-transfer commands, preserve the existing wrapping logic.
+    if (op != "transfer" || transferOp.isEmpty) {
+      val outer = DataRecord(eppNs, Some(op), None, None, ExtAnyType(Seq(inner)))
+      CommandType(outer, None, None)
+    } else {
+      // For transfer commands, build a proper TransferType wrapper so that the
+      // required `op` attribute is emitted on the <epp:transfer> element.
+      val transferWrapper = TransferType(
+        op = transferOp.get,
+        any = ExtAnyType(Seq(inner))
+      )
+      val outer = DataRecord(eppNs, Some(op), None, None, transferWrapper)
+      CommandType(outer, None, None)
+    }
   }
 
   // Session management
@@ -55,16 +77,22 @@ trait EppRpcServiceImpl extends EppRpcService {
     processEppMessage(eppRequest).flatMap { response =>
       extractEppContent[ResponseType](response, "response")
     }.flatMap { response =>
-      response.result.headOption match {
-        case Some(result) =>
-          result.code match {
-            case Number1000 | Number1001 | Number1300 | Number1301 | Number1500 =>
-              Future.successful(response)
-            case code =>
-              Future.failed(EppErrorException(result.msg.value, code))
+      val results = response.result
+      if (results.isEmpty) {
+        Future.failed(new RuntimeException("EPP response contained no <result> elements"))
+      } else {
+        val firstErrorOpt = results.find { r =>
+          r.code match {
+            case Number1000 | Number1001 | Number1300 | Number1301 | Number1500 => false
+            case _                                                               => true
           }
-        case None =>
-          Future.successful(response)
+        }
+        firstErrorOpt match {
+          case Some(errorResult) =>
+            Future.failed(EppErrorException(errorResult.msg.value, errorResult.code))
+          case None =>
+            Future.successful(response)
+        }
       }
     }
   }

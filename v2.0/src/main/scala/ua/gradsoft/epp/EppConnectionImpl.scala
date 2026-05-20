@@ -99,8 +99,6 @@ class EppConnectionImpl(
 
     rpcService.domainInfo(infoType).map { result =>
       Some(DomainInfo.fromInfDataType(result))
-    }.recover {
-      case _: ua.gradsoft.epp.rpc.EppErrorException => None
     }
   }
 
@@ -319,7 +317,7 @@ class EppConnectionImpl(
     rpcService.contactInfo(infoType).map { result =>
       Some(ContactInfo.fromInfDataType(result))
     }.recover {
-      case _: ua.gradsoft.epp.rpc.EppErrorException => None
+      case e: ua.gradsoft.epp.rpc.EppErrorException if e.code == 2303 => None
     }
   }
 
