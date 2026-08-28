@@ -9,6 +9,8 @@ class EppConnectionImpl(
   rpcService: EppRpcService
 )(implicit ec: ExecutionContext) extends EppConnection {
 
+  private val eppLogger = org.slf4j.LoggerFactory.getLogger("ua.gradsoft.epp")
+
   override def logout(): Future[Unit] = {
     rpcService.logout().map(_ => ())
   }
@@ -26,22 +28,71 @@ class EppConnectionImpl(
    * .ua attaches nameservers as host objects, so a name must already exist in the registry before
    * a domain can reference it with <domain:hostObj> - otherwise the whole operation is refused
    * with 2303 "object does not exist", naming neither the host nor the reason. Create the ones
-   * that are missing.
+   * that are missing, run `command`, and take every host this call created back out again if
+   * anything after it fails: a host object left behind by a domain operation that never happened
+   * is invisible to the portal and has to be cleaned up at the registry by hand.
    *
    * Hosts outside .ua carry no addresses: the registry resolves them itself and refuses with 2306
-   * if they do not resolve. Hosts inside a .ua zone need glue, which this does not supply - those
-   * have to be created deliberately, with addresses.
+   * if they do not resolve. Hosts inside a .ua zone need glue, which a list of nameserver names
+   * cannot carry - see hostCreateRefused for what the caller is told when one of those is missing.
    *
    * Sequential on purpose: the RPC layer serialises every exchange on the one connection anyway,
    * so issuing these concurrently would only queue threads behind that lock.
    */
-  private def ensureHostsExist(names: Seq[String]): Future[Unit] =
-    names.distinct.foldLeft(Future.successful(())) { (previous, name) =>
+  private def withEnsuredHosts[T](domainName: String, names: Seq[String])(command: => Future[T]): Future[T] = {
+    val created = scala.collection.mutable.ArrayBuffer.empty[String]
+
+    val ensured = names.distinct.foldLeft(Future.successful(())) { (previous, name) =>
       previous.flatMap { _ =>
         checkHost(name).flatMap { available =>
           // checkHost reports availability: available means nothing is registered under the name.
-          if available then rpcService.hostCreate(CreateType(name = name, addr = Seq.empty)).map(_ => ())
+          if available then
+            rpcService.hostCreate(CreateType(name = name, addr = Seq.empty))
+              .map { _ => created += name; () }
+              .recoverWith { case e => Future.failed(hostCreateRefused(domainName, name, e)) }
           else Future.successful(())
+        }
+      }
+    }
+
+    ensured.flatMap(_ => command).recoverWith { case e =>
+      discardHosts(created.toSeq).flatMap(_ => Future.failed(e))
+    }
+  }
+
+  /**
+   * A refused hostCreate reads as an error about a name the caller never asked to create. Say
+   * which domain it was for, and for a name inside .ua add what the registry will not: a host
+   * under a .ua zone is created with glue addresses, and a nameserver list has none to give, so
+   * that host has to exist before a domain can point at it.
+   *
+   * The EPP result code is carried through unchanged - callers route on it.
+   */
+  private def hostCreateRefused(domainName: String, host: String, cause: Throwable): Throwable = {
+    val glue =
+      if host.toLowerCase.endsWith(".ua") then
+        s"; $host is inside .ua, where a host object needs glue addresses - create it at the registry with its IP addresses first"
+      else ""
+    val what = s"cannot create nameserver host $host for $domainName"
+    cause match {
+      case e: ua.gradsoft.epp.rpc.EppErrorException =>
+        ua.gradsoft.epp.rpc.EppErrorException(s"$what: ${e.msg}$glue", e.code)
+      case e =>
+        new RuntimeException(s"$what: ${e.getMessage}$glue", e)
+    }
+  }
+
+  /**
+   * Best effort: the failure that brought us here is what the caller has to see, so a host that
+   * will not go away is logged and left.
+   */
+  private def discardHosts(names: Seq[String]): Future[Unit] =
+    names.foldLeft(Future.successful(())) { (previous, name) =>
+      previous.flatMap { _ =>
+        deleteHost(name).recover { case e =>
+          eppLogger.warn(
+            s"host $name was created for a domain operation that then failed, and could not be removed: ${e.getMessage}"
+          )
         }
       }
     }
@@ -94,7 +145,7 @@ class EppConnectionImpl(
       authInfo = authInfoType
     )
 
-    ensureHostsExist(domain.nameservers).flatMap { _ =>
+    withEnsuredHosts(domain.name, domain.nameservers) {
       rpcService.domainCreate(createType).map { result =>
         domain.copy(
           creationDate = Some(ua.gradsoft.epp.util.EppXmlUtil.fromXMLGregorianCalendar(result.crDate)),
@@ -184,7 +235,7 @@ class EppConnectionImpl(
           // Nothing to change — skip the EPP call
           Future.successful(domain)
         else
-          ensureHostsExist(nsToAdd.toSeq).flatMap { _ =>
+          withEnsuredHosts(domain.name, nsToAdd.toSeq) {
             val updateType = UpdateTypeType2(name = domain.name, add = add, rem = rem, chg = chg)
             rpcService.domainUpdate(updateType).map(_ => domain)
           }
