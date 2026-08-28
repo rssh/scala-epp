@@ -1,6 +1,7 @@
 package ua.gradsoft.epp
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.Failure
 import ua.gradsoft.epp.rpc.EppTcpRpcServiceImpl
 import ua.gradsoft.epp.xsdmodel._
 
@@ -32,7 +33,12 @@ class TcpClientEppService(
       )
     )
 
-    rpcService.login(loginType).map { response =>
+    // executeCommand already fails the Future for every non-success result code, so a bad-password
+    // login never reaches the match below - log it here, where it actually arrives.
+    rpcService.login(loginType).andThen {
+      case Failure(e: ua.gradsoft.epp.rpc.EppErrorException) =>
+        eppLogger.error(s"EPP login failed for ${credentials.id}, code ${e.code}: ${e.msg}")
+    }.map { response =>
       response.result.headOption match {
         case Some(result) =>
           val resultCode = result.code
@@ -40,8 +46,7 @@ class TcpClientEppService(
             case Number1000 | Number1500 =>
               new EppConnectionImpl(rpcService)
             case code =>
-              // A failed login leaves the engine without a connection - never let it pass silently.
-              eppLogger.error(s"EPP login failed, code $code: ${result.msg.value}")
+              eppLogger.error(s"EPP login refused with unexpected code $code: ${result.msg.value}")
               throw ua.gradsoft.epp.rpc.EppErrorException(result.msg.value, code)
           }
         case None =>

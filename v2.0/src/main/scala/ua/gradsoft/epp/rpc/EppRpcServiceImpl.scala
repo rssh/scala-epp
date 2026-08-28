@@ -6,7 +6,7 @@ import scalaxb.DataRecord
 
 trait EppRpcServiceImpl extends EppRpcService {
 
-  private val eppLogger = org.slf4j.LoggerFactory.getLogger("ua.gradsoft.epp")
+  protected val eppLogger = org.slf4j.LoggerFactory.getLogger("ua.gradsoft.epp")
 
   implicit def executionContext: ExecutionContext
 
@@ -64,8 +64,11 @@ trait EppRpcServiceImpl extends EppRpcService {
               Future.successful(response)
             case code =>
               // Logged where it is raised, so every registry error leaves a trace no matter what
-              // the caller does with it - including the 2303s that legitimately become None.
-              eppLogger.warn(s"EPP error $code: ${result.msg.value}")
+              // the caller does with it. 2303 ("object does not exist") is the ordinary answer to
+              // a lookup for something absent - warning on it would bury real failures under
+              // routine not-founds, so it is recorded at debug.
+              if (code == Number2303) eppLogger.debug(s"EPP $code: ${result.msg.value}")
+              else eppLogger.warn(s"EPP error $code: ${result.msg.value}")
               Future.failed(EppErrorException(result.msg.value, code))
           }
         case None =>

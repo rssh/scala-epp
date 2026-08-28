@@ -48,8 +48,14 @@ class EppTcpRpcServiceImpl(
     Try(sslSocket.close())
   }
 
+  /** Blanks <pw> elements - the login frame and every authInfo carry a password in cleartext. */
+  private def redact(xml: String): String =
+    xml.replaceAll("(?s)(<(?:[\\w.-]+:)?pw>)[^<]*(</(?:[\\w.-]+:)?pw>)", "$1***$2")
+
   private def writeFrame(xml: String): Unit = {
-    System.err.println(s"EPP >>> $xml")
+    // Through the logger, not stderr: level-controlled, and it lands in the configured appender
+    // with the rest of the application rather than in the journal outside any rotation policy.
+    eppLogger.debug(s"EPP >>> ${redact(xml)}")
     val payload = xml.getBytes("UTF-8")
     val totalLength = 4 + payload.length
     output.writeInt(totalLength)
@@ -65,20 +71,30 @@ class EppTcpRpcServiceImpl(
       try body
       catch {
         case e: java.net.SocketTimeoutException =>
+          // Read the timeout first: getSoTimeout throws SocketException on a closed socket, which
+          // would replace this SocketTimeoutException and lose both the message and the type
+          // callers match on.
+          val waitedMs = Try(sslSocket.getSoTimeout).getOrElse(0)
           Try(sslSocket.close())
-          throw new java.net.SocketTimeoutException(
-            s"No EPP response within ${sslSocket.getSoTimeout}ms; connection closed"
-          )
+          val timeout = new java.net.SocketTimeoutException(s"No EPP response within ${waitedMs}ms; connection closed")
+          timeout.initCause(e)
+          throw timeout
       }
 
     val totalLength = abortOnTimeout(input.readInt())
-    if (totalLength < 4) {
-      throw new IllegalArgumentException(s"Invalid EPP frame: total length $totalLength < 4")
+    import EppTcpRpcServiceImpl.{HeaderSize, MaxFrameSize}
+    if (totalLength < HeaderSize || totalLength > MaxFrameSize) {
+      // A desynced stream reads arbitrary bytes as a length. Without an upper bound the
+      // allocation below reaches ~2GB and takes the JVM down instead of just this connection.
+      Try(sslSocket.close())
+      throw new IllegalArgumentException(
+        s"Invalid EPP frame: total length $totalLength outside [$HeaderSize, $MaxFrameSize]; connection closed"
+      )
     }
     val payloadLength = totalLength - 4
     val payload = new Array[Byte](payloadLength)
     abortOnTimeout(input.readFully(payload))
-    System.err.println(s"EPP <<< ${new String(payload, "UTF-8")}")
+    eppLogger.debug(s"EPP <<< ${redact(new String(payload, "UTF-8"))}")
     payload
   }
 
@@ -93,6 +109,9 @@ class EppTcpRpcServiceImpl(
 object EppTcpRpcServiceImpl {
 
   private val HeaderSize = 4
+
+  /** EPP frames are kilobytes; anything larger means the stream is not carrying EPP any more. */
+  private val MaxFrameSize = 1024 * 1024
 
   /**
    * Parse an EPP XML string into EppType, dispatching by child element label.

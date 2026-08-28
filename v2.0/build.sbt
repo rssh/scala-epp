@@ -10,6 +10,7 @@ libraryDependencies ++= Seq(
   "jakarta.xml.bind" % "jakarta.xml.bind-api" % "4.0.2",
   "org.glassfish.jaxb" % "jaxb-runtime" % "4.0.6",
   "com.softwaremill.sttp.client4" %% "core" % "4.0.0-M20",
+  "org.slf4j" % "slf4j-api" % "2.0.16",
   "org.scalatest" %% "scalatest" % "3.2.19" % "test"
 )
 Test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-l", "IntegrationTest")
