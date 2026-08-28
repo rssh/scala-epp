@@ -22,6 +22,30 @@ class EppConnectionImpl(
     }
   }
 
+  /**
+   * .ua attaches nameservers as host objects, so a name must already exist in the registry before
+   * a domain can reference it with <domain:hostObj> - otherwise the whole operation is refused
+   * with 2303 "object does not exist", naming neither the host nor the reason. Create the ones
+   * that are missing.
+   *
+   * Hosts outside .ua carry no addresses: the registry resolves them itself and refuses with 2306
+   * if they do not resolve. Hosts inside a .ua zone need glue, which this does not supply - those
+   * have to be created deliberately, with addresses.
+   *
+   * Sequential on purpose: the RPC layer serialises every exchange on the one connection anyway,
+   * so issuing these concurrently would only queue threads behind that lock.
+   */
+  private def ensureHostsExist(names: Seq[String]): Future[Unit] =
+    names.distinct.foldLeft(Future.successful(())) { (previous, name) =>
+      previous.flatMap { _ =>
+        checkHost(name).flatMap { available =>
+          // checkHost reports availability: available means nothing is registered under the name.
+          if available then rpcService.hostCreate(CreateType(name = name, addr = Seq.empty)).map(_ => ())
+          else Future.successful(())
+        }
+      }
+    }
+
   override def createDomain(domain: DomainInfo, period: Option[EppPeriod], authInfo: Option[String]): Future[DomainInfo] = {
     val periodType = period.map { p =>
       PeriodType(
@@ -70,11 +94,13 @@ class EppConnectionImpl(
       authInfo = authInfoType
     )
 
-    rpcService.domainCreate(createType).map { result =>
-      domain.copy(
-        creationDate = Some(ua.gradsoft.epp.util.EppXmlUtil.fromXMLGregorianCalendar(result.crDate)),
-        expirationDate = result.exDate.map(ua.gradsoft.epp.util.EppXmlUtil.fromXMLGregorianCalendar)
-      )
+    ensureHostsExist(domain.nameservers).flatMap { _ =>
+      rpcService.domainCreate(createType).map { result =>
+        domain.copy(
+          creationDate = Some(ua.gradsoft.epp.util.EppXmlUtil.fromXMLGregorianCalendar(result.crDate)),
+          expirationDate = result.exDate.map(ua.gradsoft.epp.util.EppXmlUtil.fromXMLGregorianCalendar)
+        )
+      }
     }
   }
 
@@ -158,8 +184,10 @@ class EppConnectionImpl(
           // Nothing to change — skip the EPP call
           Future.successful(domain)
         else
-          val updateType = UpdateTypeType2(name = domain.name, add = add, rem = rem, chg = chg)
-          rpcService.domainUpdate(updateType).map(_ => domain)
+          ensureHostsExist(nsToAdd.toSeq).flatMap { _ =>
+            val updateType = UpdateTypeType2(name = domain.name, add = add, rem = rem, chg = chg)
+            rpcService.domainUpdate(updateType).map(_ => domain)
+          }
     }
   }
 
