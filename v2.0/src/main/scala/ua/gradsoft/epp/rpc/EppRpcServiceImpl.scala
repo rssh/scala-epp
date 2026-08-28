@@ -6,6 +6,8 @@ import scalaxb.DataRecord
 
 trait EppRpcServiceImpl extends EppRpcService {
 
+  private val eppLogger = org.slf4j.LoggerFactory.getLogger("ua.gradsoft.epp")
+
   implicit def executionContext: ExecutionContext
 
   private val eppNs = Some("urn:ietf:params:xml:ns:epp-1.0")
@@ -61,6 +63,9 @@ trait EppRpcServiceImpl extends EppRpcService {
             case Number1000 | Number1001 | Number1300 | Number1301 | Number1500 =>
               Future.successful(response)
             case code =>
+              // Logged where it is raised, so every registry error leaves a trace no matter what
+              // the caller does with it - including the 2303s that legitimately become None.
+              eppLogger.warn(s"EPP error $code: ${result.msg.value}")
               Future.failed(EppErrorException(result.msg.value, code))
           }
         case None =>

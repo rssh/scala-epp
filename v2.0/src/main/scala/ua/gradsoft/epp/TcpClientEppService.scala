@@ -11,6 +11,8 @@ class TcpClientEppService(
 
   require(config.transportType == EppTransportType.Tcp, "TcpClientEppService requires Tcp transport type")
 
+  private val eppLogger = org.slf4j.LoggerFactory.getLogger("ua.gradsoft.epp")
+
   override def login(credentials: EppCredentials): Future[EppConnection] = {
     val loginType = LoginType(
       clID = credentials.id,
@@ -38,6 +40,8 @@ class TcpClientEppService(
             case Number1000 | Number1500 =>
               new EppConnectionImpl(rpcService)
             case code =>
+              // A failed login leaves the engine without a connection - never let it pass silently.
+              eppLogger.error(s"EPP login failed, code $code: ${result.msg.value}")
               throw ua.gradsoft.epp.rpc.EppErrorException(result.msg.value, code)
           }
         case None =>
@@ -80,7 +84,7 @@ object TcpClientEppService {
         }
     }
 
-    val rpcService = EppTcpRpcServiceImpl.connect(host, port, sslContext)
+    val rpcService = EppTcpRpcServiceImpl.connect(host, port, sslContext, config.readTimeoutMillis)
     new TcpClientEppService(config, rpcService)
   }
 

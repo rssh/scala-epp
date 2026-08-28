@@ -100,7 +100,10 @@ class EppConnectionImpl(
     rpcService.domainInfo(infoType).map { result =>
       Some(DomainInfo.fromInfDataType(result))
     }.recover {
-      case _: ua.gradsoft.epp.rpc.EppErrorException => None
+      // 2303 is EPP's "object does not exist" - the only error that legitimately means None.
+      // Every other error (auth, authorization, syntax, server failure) must reach the caller:
+      // reporting them as "not found" hides the reason and sends the caller down a wrong path.
+      case e: ua.gradsoft.epp.rpc.EppErrorException if e.code == Number2303 => None
     }
   }
 
@@ -319,7 +322,10 @@ class EppConnectionImpl(
     rpcService.contactInfo(infoType).map { result =>
       Some(ContactInfo.fromInfDataType(result))
     }.recover {
-      case _: ua.gradsoft.epp.rpc.EppErrorException => None
+      // 2303 is EPP's "object does not exist" - the only error that legitimately means None.
+      // Every other error (auth, authorization, syntax, server failure) must reach the caller:
+      // reporting them as "not found" hides the reason and sends the caller down a wrong path.
+      case e: ua.gradsoft.epp.rpc.EppErrorException if e.code == Number2303 => None
     }
   }
 
@@ -449,7 +455,10 @@ class EppConnectionImpl(
     rpcService.hostInfo(infoType).map { result =>
       Some(HostInfo.fromInfDataType(result))
     }.recover {
-      case _: ua.gradsoft.epp.rpc.EppErrorException => None
+      // 2303 is EPP's "object does not exist" - the only error that legitimately means None.
+      // Every other error (auth, authorization, syntax, server failure) must reach the caller:
+      // reporting them as "not found" hides the reason and sends the caller down a wrong path.
+      case e: ua.gradsoft.epp.rpc.EppErrorException if e.code == Number2303 => None
     }
   }
 

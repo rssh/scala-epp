@@ -10,7 +10,14 @@ case class EppConfig(
   host: Option[String] = None,
   port: Option[Int] = None,
   clientCertificatePem: Option[String] = None,
-  serverCaPem: Option[String] = None
+  serverCaPem: Option[String] = None,
+  /**
+   * Bound on how long a read may block. EPP over TCP keeps long-lived sessions, and a session the
+   * registry has dropped - or one a firewall evicted while idle - leaves the socket looking
+   * established while no reply can ever arrive. Without this a read blocks forever and, because
+   * the request/response pair is serialised on one monitor, takes every later EPP operation with it.
+   */
+  readTimeoutMillis: Int = 60000
 )
 
 object EppConfig {

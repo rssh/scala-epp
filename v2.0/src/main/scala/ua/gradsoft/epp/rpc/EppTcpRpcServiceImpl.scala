@@ -58,13 +58,26 @@ class EppTcpRpcServiceImpl(
   }
 
   private def readFrame(): Array[Byte] = {
-    val totalLength = input.readInt()
+    // A timed-out read leaves the stream mid-frame: a late reply would be parsed as the next
+    // response and desync every command after it. Close the socket so this connection is
+    // discarded and the caller reconnects rather than reusing a stream it cannot trust.
+    def abortOnTimeout[T](body: => T): T =
+      try body
+      catch {
+        case e: java.net.SocketTimeoutException =>
+          Try(sslSocket.close())
+          throw new java.net.SocketTimeoutException(
+            s"No EPP response within ${sslSocket.getSoTimeout}ms; connection closed"
+          )
+      }
+
+    val totalLength = abortOnTimeout(input.readInt())
     if (totalLength < 4) {
       throw new IllegalArgumentException(s"Invalid EPP frame: total length $totalLength < 4")
     }
     val payloadLength = totalLength - 4
     val payload = new Array[Byte](payloadLength)
-    input.readFully(payload)
+    abortOnTimeout(input.readFully(payload))
     System.err.println(s"EPP <<< ${new String(payload, "UTF-8")}")
     payload
   }
@@ -109,9 +122,10 @@ object EppTcpRpcServiceImpl {
    *
    * Performs the TLS handshake and reads the initial server greeting.
    */
-  def connect(host: String, port: Int, sslContext: SSLContext)(implicit ec: ExecutionContext): EppTcpRpcServiceImpl = {
+  def connect(host: String, port: Int, sslContext: SSLContext, readTimeoutMillis: Int = 60000)(implicit ec: ExecutionContext): EppTcpRpcServiceImpl = {
     val socket = sslContext.getSocketFactory.createSocket(host, port).asInstanceOf[SSLSocket]
     try {
+      socket.setSoTimeout(readTimeoutMillis)
       socket.startHandshake()
       val input = new DataInputStream(socket.getInputStream)
 
