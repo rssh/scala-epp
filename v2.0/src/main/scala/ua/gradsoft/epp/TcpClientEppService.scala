@@ -33,11 +33,14 @@ class TcpClientEppService(
       )
     )
 
-    // executeCommand already fails the Future for every non-success result code, so a bad-password
-    // login never reaches the match below - log it here, where it actually arrives.
+    // executeCommand fails the Future for every non-success result code, so a bad-password login
+    // never reaches the match below - and it has already logged the code and the registry's own
+    // message where it raised them. What it cannot know is whose credentials were refused, or
+    // that this failure leaves the connection with no session at all rather than costing one
+    // command. Only that is added here; repeating the code would just print it twice.
     rpcService.login(loginType).andThen {
-      case Failure(e: ua.gradsoft.epp.rpc.EppErrorException) =>
-        eppLogger.error(s"EPP login failed for ${credentials.id}, code ${e.code}: ${e.msg}")
+      case Failure(_: ua.gradsoft.epp.rpc.EppErrorException) =>
+        eppLogger.error(s"EPP login for ${credentials.id} was refused: this connection has no session")
     }.map { response =>
       response.result.headOption match {
         case Some(result) =>
